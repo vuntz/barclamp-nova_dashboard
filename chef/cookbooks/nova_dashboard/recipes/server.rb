@@ -178,42 +178,10 @@ db_settings = {
 
 keystone_settings = KeystoneHelper.keystone_settings(node, @cookbook_name)
 
-glances = search(:node, "roles:glance-server") || []
-if glances.length > 0
-  glance = glances[0]
-  glance_insecure = glance[:glance][:api][:protocol] == 'https' && glance[:glance][:ssl][:insecure]
-else
-  glance_insecure = false
-end
-
-cinders = search(:node, "roles:cinder-controller") || []
-if cinders.length > 0
-  cinder = cinders[0]
-  cinder_insecure = cinder[:cinder][:api][:protocol] == 'https' && cinder[:cinder][:ssl][:insecure]
-else
-  cinder_insecure = false
-end
-
-neutrons = search(:node, "roles:neutron-server") || []
-if neutrons.length > 0
-  neutron = neutrons[0]
-  neutron_insecure = neutron[:neutron][:api][:protocol] == 'https' && neutron[:neutron][:ssl][:insecure]
-  if neutron[:neutron][:networking_plugin] == 'ml2'
-    neutron_ml2_type_drivers = neutron[:neutron][:ml2_type_drivers]
-  else
-    neutron_ml2_type_drivers = "*"
-  end
-  neutron_use_lbaas = neutron[:neutron][:use_lbaas]
-  neutron_use_vpnaas = neutron[:neutron][:use_vpnaas]
-else
-  neutron_insecure = false
-  neutron_ml2_type_drivers = "*"
-  neutron_use_lbaas = false
-  neutron_use_vpnaas = false
-end
-
-nova = get_instance('roles:nova-multi-controller')
-nova_insecure = (nova[:nova][:ssl][:enabled] && nova[:nova][:ssl][:insecure]) rescue false
+glance_settings = CrowbarConfig.fetch("openstack", "glance")
+cinder_settings = CrowbarConfig.fetch("openstack", "cinder")
+neutron_settings = CrowbarConfig.fetch("openstack", "neutron")
+nova_settings = CrowbarConfig.fetch("openstack", "nova")
 
 directory "/var/lib/openstack-dashboard" do
   owner node[:apache][:user]
@@ -274,17 +242,17 @@ template local_settings do
   variables(
     :debug => node[:nova_dashboard][:debug],
     :keystone_settings => keystone_settings,
-    :insecure => keystone_settings['insecure'] || glance_insecure || cinder_insecure || neutron_insecure || nova_insecure,
+    :insecure => keystone_settings['insecure'] || glance_settings.fetch("insecure", false) || cinder_settings.fetch("insecure", false) || neutron_settings.fetch("insecure", false) || nova_settings.fetch("insecure", false),
     :db_settings => db_settings,
-    :enable_lb => neutron_use_lbaas,
-    :enable_vpn => neutron_use_vpnaas,
+    :enable_lb => neutron_settings.fetch("features", {}).fetch("lbaas", false),
+    :enable_vpn => neutron_settings.fetch("features", {}).fetch("vpnaas", false),
     :timezone => (node[:provisioner][:timezone] rescue "UTC") || "UTC",
     :use_ssl => node[:nova_dashboard][:apache][:ssl],
     :password_validator_regex => node[:nova_dashboard][:password_validator][:regex],
     :password_validator_help_text => node[:nova_dashboard][:password_validator][:help_text],
     :site_branding => node[:nova_dashboard][:site_branding],
     :site_branding_link => node[:nova_dashboard][:site_branding_link],
-    :neutron_ml2_type_drivers => neutron_ml2_type_drivers,
+    :neutron_ml2_type_drivers => neutron_settings.fetch("ml2_type_drivers", ["gre"]),
     :help_url => node[:nova_dashboard][:help_url],
     :session_timeout => node[:nova_dashboard][:session_timeout],
     :memcached_locations => memcached_locations,
